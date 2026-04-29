@@ -3,6 +3,90 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { fetch as undiciFetch } from 'undici';
 
+// ── BOGO chain: downstream service URLs ──────────────────────────────────────────
+const RECEIPT_SERVICE  = process.env.RECEIPT_SERVICE_URL  || 'https://hive-receipt.onrender.com';
+const GAMIF_SERVICE    = process.env.GAMIFICATION_SERVICE_URL || 'https://hive-gamification.onrender.com';
+const AUDIT_FEE_ATOMIC = 100000; // $0.10 USDC atomic — audit tier
+const GAMIF_FEE_ATOMIC = 500;    // $0.0005 per gamification event
+
+/**
+ * emitCheckoutReceipt — call hive-receipt /v1/receipt/sign?tier=audit after a
+ * successful checkout execute. Non-blocking; never fails the primary response.
+ */
+async function emitCheckoutReceipt({ checkout_id, buyer_did, total_atomic, tx_hash }) {
+  try {
+    const payment = JSON.stringify({
+      tx_hash: tx_hash || ('checkout-' + checkout_id),
+      payer:   MONROE,
+      amount:  AUDIT_FEE_ATOMIC,
+      asset:   'USDC',
+      network: NETWORK,
+      note:    'Audit receipt for checkout execute — charged to Monroe treasury on behalf of buyer.'
+    });
+    const resp = await undiciFetch(`${RECEIPT_SERVICE}/v1/receipt/sign?tier=audit`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Payment': payment },
+      body: JSON.stringify({
+        tx_hash:                tx_hash || ('checkout-' + checkout_id),
+        network:                'base',
+        expected_recipient:     MONROE,
+        expected_amount_atomic: total_atomic,
+        expected_asset:         'USDC',
+        payer_did:              buyer_did || null,
+        payee_did:              'did:web:hive-checkout.onrender.com',
+        checkout_id
+      })
+    });
+    if (!resp.ok) return { error: `hive-receipt ${resp.status}`, fee_charged: false };
+    const env = await resp.json();
+    return {
+      id:              env.receipt_id,
+      sig_alg:         'EdDSA',
+      kid:             'hive-receipt-spectral-1',
+      public_jwks_uri: `${RECEIPT_SERVICE}/.well-known/jwks.json`,
+      signature:       env.signature || env.sig || null,
+      fee_atomic:      AUDIT_FEE_ATOMIC,
+      fee_usd:         '$0.10',
+      tier:            'audit',
+      verifiable_at:   `${RECEIPT_SERVICE}/v1/receipt/verify/${env.receipt_id}`
+    };
+  } catch (err) {
+    return { error: err.message, fee_charged: false };
+  }
+}
+
+/**
+ * emitCheckoutGamification — call hive-gamification /v1/reputation/event
+ * for a checkout_execute event. First-call-free BOGO applies at gamification layer.
+ */
+async function emitCheckoutGamification({ buyer_did, checkout_id, total_atomic }) {
+  try {
+    const resp = await undiciFetch(`${GAMIF_SERVICE}/v1/reputation/event`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        did:    buyer_did || 'did:web:unknown',
+        reason: 'transaction_complete',
+        _context: { event_type: 'checkout_execute', checkout_id, total_atomic }
+      })
+    });
+    if (!resp.ok) return { error: `hive-gamification ${resp.status}`, fee_charged: false };
+    const body = await resp.json();
+    return {
+      tier_after:     body.tier     || null,
+      streak_after:   body.streak   || null,
+      points_awarded: body.delta    || 2,
+      reputation:     body.reputation || null,
+      fee_atomic:     GAMIF_FEE_ATOMIC,
+      fee_usd:        '$0.0005',
+      event_type:     'checkout_execute',
+      bogo_applied:   body.bogo_applied || false
+    };
+  } catch (err) {
+    return { error: err.message, fee_charged: false };
+  }
+}
+
 const app = express();
 app.use(express.json());
 
@@ -105,7 +189,16 @@ app.get('/.well-known/agent.json', (_req, res) => {
     mcp_endpoint: '/mcp',
     tools: ['build_checkout', 'execute_checkout', 'get_checkout_status'],
     phase: 'Phase 1 — checkout-and-fanout',
-    phase2_note: 'Phase 2 will implement true atomic batch x402 with merchant-side aggregator.'
+    phase2_note: 'Phase 2 will implement true atomic batch x402 with merchant-side aggregator.',
+    bogo_disclosure: {
+      description: 'POST /v1/checkout/execute triggers a three-fee BOGO chain on payment: (1) 5% convenience fee payTo Monroe, (2) $0.10 audit receipt via hive-receipt (Spectral-signed), (3) $0.0005 gamification event via hive-gamification (first-call-free BOGO applies).',
+      fee_events: 3,
+      chain: [
+        { service: 'hive-checkout',      endpoint: 'POST /v1/checkout/execute',   fee: '5% convenience fee',  fee_bps: 500 },
+        { service: 'hive-receipt',       endpoint: 'POST /v1/receipt/sign',       fee: '$0.10 audit tier',    fee_atomic: 100000 },
+        { service: 'hive-gamification', endpoint: 'POST /v1/reputation/event',   fee: '$0.0005 (first free)', fee_atomic: 500 }
+      ]
+    }
   });
 });
 
@@ -369,12 +462,41 @@ app.post('/v1/checkout/execute', async (req, res) => {
   cart.status = status;
   cart.results = results;
 
+  // ── BOGO chain #3b: receipt + gamification on checkout execute ──────────────────
+  const buyer_did = req.headers['x-did'] || req.body?.buyer_did || null;
+  const [auditReceipt, gamification] = await Promise.all([
+    emitCheckoutReceipt({
+      checkout_id,
+      buyer_did,
+      total_atomic: cart.total_atomic,
+      tx_hash: (() => { try { return xPayment ? JSON.parse(xPayment).tx_hash : null; } catch { return null; } })()
+    }),
+    emitCheckoutGamification({ buyer_did, checkout_id, total_atomic: cart.total_atomic })
+  ]);
+
+  const convFee = cart.convenience_fee_atomic;
   res.json({
     checkout_id,
     results,
+    status,
+    // Fee breakdown
+    convenience_fee: {
+      hive_fee_atomic: convFee,
+      hive_fee_usd:    `$${(convFee / 1_000_000).toFixed(4)}`,
+      fee_bps:         CONVENIENCE_FEE_BPS,
+      payTo:           MONROE,
+      description:     '5% convenience fee'
+    },
     total_paid_atomic: cart.total_atomic,
-    hive_take_atomic: cart.convenience_fee_atomic,
-    status
+    // BOGO chain blocks
+    audit_receipt: auditReceipt,
+    gamification,
+    bogo_chain: {
+      description: 'Three fees per checkout execute: (1) 5% convenience fee to Monroe, (2) $0.10 audit receipt via hive-receipt, (3) $0.0005 gamification event via hive-gamification (first call free).',
+      fee_events:  3,
+      total_fee_approx_usd: `$${((convFee / 1_000_000) + 0.10 + 0.0005).toFixed(4)}`,
+      payer_note:  'Convenience fee paid by buyer via x402. Audit receipt and gamification fees charged to Monroe treasury on behalf of buyer.'
+    }
   });
 });
 
