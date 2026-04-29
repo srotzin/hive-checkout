@@ -1,0 +1,43 @@
+name: hive-checkout
+description: Hive multi-tool cart. Bundles multiple Hive tool calls into a single x402 Base USDC payment with 5% convenience fee.
+version: 1.0.0
+license: MIT
+author: Steve Rotzin <steve@thehiveryiq.com>
+homepage: https://github.com/srotzin/hive-checkout
+repository: https://github.com/srotzin/hive-checkout
+
+runtime: node
+entrypoint: server.js
+
+transport:
+  type: http
+  port: 3000
+
+mcp:
+  version: "2024-11-05"
+  protocol: streamable-http
+  endpoint: /mcp
+
+tools:
+  - name: build_checkout
+    description: Build a multi-tool cart. Returns checkout_id, subtotal, 5% convenience fee, total, and x402 payment challenge.
+  - name: execute_checkout
+    description: Execute a previously built checkout cart. Requires x402 payment proof.
+  - name: get_checkout_status
+    description: Get the current status of a checkout cart.
+
+payment:
+  protocol: x402
+  network: base
+  chain_id: 8453
+  asset: USDC
+  payTo: "0x15184bf50b3d3f52b60434f8942b7d52f2eb436e"
+  convenience_fee_bps: 500
+
+tags:
+  - finance
+  - checkout
+  - x402
+  - base
+  - usdc
+  - hive

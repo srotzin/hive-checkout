@@ -1,0 +1,18 @@
+{
+  "name": "hive-checkout",
+  "version": "1.0.0",
+  "description": "Hive multi-tool cart with 5% convenience fee — x402 Base USDC settlement to Monroe",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "undici": "^6.11.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
