@@ -6,6 +6,17 @@ import { fetch as undiciFetch } from 'undici';
 const app = express();
 app.use(express.json());
 
+// ─── CORS middleware ──────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Payment, X-Did, X-Signature');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+
 const PORT = process.env.PORT || 3000;
 const MONROE = '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e';
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -13,6 +24,10 @@ const NETWORK = 'base';
 const CHAIN_ID = 8453;
 const CONVENIENCE_FEE_BPS = 500; // 5%
 const HMAC_SECRET = process.env.HMAC_SECRET || crypto.randomBytes(32).toString('hex');
+
+// ─── Spectral Ed25519 pubkey ──────────────────────────────────────────────────
+const SPECTRAL_PUBKEY_B64 = process.env.SPECTRAL_PUBKEY_B64 || 'MCowBQYDK2VwAyEA42pz37SDp4EotOKq9vnmisKva6xQip1esqxxS0pfJlg=';
+
 const SETTLEMENT_LOG = '/tmp/checkout_settlements.jsonl';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -492,9 +507,7 @@ app.get('/.well-known/x402', (_req, res) => {
 // ── well-known / agent-card.json (A2A 0.1) ────────────────────────────────────
 
 app.get('/.well-known/agent-card.json', (req, res) => {
-  const pubkey = (typeof getPublicKeyB64 === 'function')
-    ? getPublicKeyB64()
-    : (typeof spectral !== 'undefined' ? (spectral.publicKeyB64 || null) : null);
+  const pubkey = SPECTRAL_PUBKEY_B64;
   res.json({
     name:        'hive-checkout',
     version:     '1.0.0',
@@ -622,6 +635,64 @@ app.get('/.well-known/openapi.json', (_req, res) => {
         }
       }
     }
+  });
+});
+
+
+// ─── JWKS ─────────────────────────────────────────────────────────────────────
+app.get('/.well-known/jwks.json', (_req, res) => {
+  const der = Buffer.from(SPECTRAL_PUBKEY_B64, 'base64');
+  const x   = der.slice(-32).toString('base64url');
+  res.json({
+    keys: [{
+      kty: 'OKP',
+      crv: 'Ed25519',
+      use: 'sig',
+      alg: 'EdDSA',
+      kid: 'hive-checkout-spectral-1',
+      x
+    }]
+  });
+});
+
+// ─── DID document ─────────────────────────────────────────────────────────────
+app.get('/.well-known/did.json', (_req, res) => {
+  const did = 'did:web:hive-checkout.onrender.com';
+  const der = Buffer.from(SPECTRAL_PUBKEY_B64, 'base64');
+  const x   = der.slice(-32).toString('base64url');
+  res.json({
+    '@context': [
+      'https://www.w3.org/ns/did/v1',
+      'https://w3id.org/security/suites/jws-2020/v1'
+    ],
+    id: did,
+    verificationMethod: [{
+      id:         `${did}#spectral`,
+      type:       'JsonWebKey2020',
+      controller: did,
+      publicKeyJwk: {
+        kty: 'OKP',
+        crv: 'Ed25519',
+        use: 'sig',
+        alg: 'EdDSA',
+        kid: 'hive-checkout-spectral-1',
+        x
+      }
+    }],
+    authentication:  [`${did}#spectral`],
+    assertionMethod: [`${did}#spectral`],
+    service: [
+      {
+        id:              `${did}#agent-card`,
+        type:            'AgentCard',
+        serviceEndpoint: 'https://hive-checkout.onrender.com/.well-known/agent.json'
+      },
+      {
+        id:              `${did}#a2a`,
+        type:            'A2AService',
+        serviceEndpoint: 'https://hive-checkout.onrender.com/v1'
+      }
+    ]
   });
 });
 
