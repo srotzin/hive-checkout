@@ -203,6 +203,56 @@ app.post('/mcp', async (req, res) => {
 
 // ── REST endpoints ────────────────────────────────────────────────────────────
 
+
+// POST /v1/checkout/quote
+// Returns a USAd or USDCx Aleo facilitator quote for a merchant checkout.
+// Routes through hive-aleo-arc facilitator.
+app.post('/v1/checkout/quote', async (req, res) => {
+  const { asset, amount, merchant } = req.body || {};
+  if (!asset || !amount) {
+    return res.status(400).json({ error: 'asset and amount required' });
+  }
+
+  const supportedAleoAssets = { 'USAd': 'usad_stablecoin.aleo', 'USDCx': 'usdcx_stablecoin.aleo' };
+  const programId = supportedAleoAssets[asset];
+
+  if (!programId) {
+    return res.status(400).json({
+      error: `Unsupported Aleo asset: ${asset}. Accepted: ${Object.keys(supportedAleoAssets).join(', ')}`,
+    });
+  }
+
+  try {
+    const facilitatorUrl = 'https://hive-aleo-arc.onrender.com/v1/facilitator/quote';
+    const resp = await fetch(facilitatorUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset, amount }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const quote = await resp.json();
+
+    return res.json({
+      program_id: programId,
+      asset,
+      amount: String(amount),
+      merchant: merchant || null,
+      facilitator: 'https://hive-aleo-arc.onrender.com/v1/facilitator',
+      treasury: 'aleo1cyk7r2jmd7lfcftzyy85z4j5x6rlern598qecx8v2ms738xcuvgyq72q6tk',
+      network: 'aleo-mainnet',
+      hive_fee_bps: quote.hive_fee_bps,
+      hive_fee: quote.hive_fee,
+      net_to_merchant: quote.net_to_merchant,
+      settle_endpoint: quote.settle_endpoint,
+      verify_endpoint: quote.verify_endpoint,
+      custody_model: 'atomic-settle-and-forward',
+      quoted_at: quote.quoted_at || new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: 'Facilitator unavailable', detail: err.message });
+  }
+});
+
 // POST /v1/checkout/build
 app.post('/v1/checkout/build', (req, res) => {
   const { items } = req.body || {};
