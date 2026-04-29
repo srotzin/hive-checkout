@@ -3,14 +3,14 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { fetch as undiciFetch } from 'undici';
 
-// ── BOGO chain: downstream service URLs ──────────────────────────────────────────
+// -- BOGO chain: downstream service URLs ------------------------------------------
 const RECEIPT_SERVICE  = process.env.RECEIPT_SERVICE_URL  || 'https://hive-receipt.onrender.com';
 const GAMIF_SERVICE    = process.env.GAMIFICATION_SERVICE_URL || 'https://hive-gamification.onrender.com';
-const AUDIT_FEE_ATOMIC = 100000; // $0.10 USDC atomic — audit tier
+const AUDIT_FEE_ATOMIC = 100000; // $0.10 USDC atomic  -  audit tier
 const GAMIF_FEE_ATOMIC = 500;    // $0.0005 per gamification event
 
 /**
- * emitCheckoutReceipt — call hive-receipt /v1/receipt/sign?tier=audit after a
+ * emitCheckoutReceipt  -  call hive-receipt /v1/receipt/sign?tier=audit after a
  * successful checkout execute. Non-blocking; never fails the primary response.
  */
 async function emitCheckoutReceipt({ checkout_id, buyer_did, total_atomic, tx_hash }) {
@@ -21,7 +21,7 @@ async function emitCheckoutReceipt({ checkout_id, buyer_did, total_atomic, tx_ha
       amount:  AUDIT_FEE_ATOMIC,
       asset:   'USDC',
       network: NETWORK,
-      note:    'Audit receipt for checkout execute — charged to Monroe treasury on behalf of buyer.'
+      note:    'Audit receipt for checkout execute - charged to Monroe treasury on behalf of buyer.'
     });
     const resp = await undiciFetch(`${RECEIPT_SERVICE}/v1/receipt/sign?tier=audit`, {
       method:  'POST',
@@ -56,7 +56,7 @@ async function emitCheckoutReceipt({ checkout_id, buyer_did, total_atomic, tx_ha
 }
 
 /**
- * emitCheckoutGamification — call hive-gamification /v1/reputation/event
+ * emitCheckoutGamification  -  call hive-gamification /v1/reputation/event
  * for a checkout_execute event. First-call-free BOGO applies at gamification layer.
  */
 async function emitCheckoutGamification({ buyer_did, checkout_id, total_atomic }) {
@@ -90,7 +90,7 @@ async function emitCheckoutGamification({ buyer_did, checkout_id, total_atomic }
 const app = express();
 app.use(express.json());
 
-// ─── CORS middleware ──────────────────────────────────────────────────────────
+// --- CORS middleware ----------------------------------------------------------
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -109,12 +109,12 @@ const CHAIN_ID = 8453;
 const CONVENIENCE_FEE_BPS = 500; // 5%
 const HMAC_SECRET = process.env.HMAC_SECRET || crypto.randomBytes(32).toString('hex');
 
-// ─── Spectral Ed25519 pubkey ──────────────────────────────────────────────────
+// --- Spectral Ed25519 pubkey --------------------------------------------------
 const SPECTRAL_PUBKEY_B64 = process.env.SPECTRAL_PUBKEY_B64 || 'MCowBQYDK2VwAyEA42pz37SDp4EotOKq9vnmisKva6xQip1esqxxS0pfJlg=';
 
 const SETTLEMENT_LOG = '/tmp/checkout_settlements.jsonl';
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// -- helpers ------------------------------------------------------------------
 
 function buildCheckoutId(items) {
   return crypto.createHmac('sha256', HMAC_SECRET)
@@ -127,7 +127,7 @@ function convenienceFee(subtotal) {
   return Math.ceil(subtotal * CONVENIENCE_FEE_BPS / 10000);
 }
 
-// In-memory store (Phase 1 — ephemeral; replace with Redis/DB for prod)
+// In-memory store (Phase 1  -  ephemeral; replace with Redis/DB for prod)
 const checkoutStore = new Map();
 
 function make402Challenge(checkoutId, totalAtomic) {
@@ -151,7 +151,7 @@ function logSettlement(record) {
   } catch (_) {}
 }
 
-// ── routes ───────────────────────────────────────────────────────────────────
+// -- routes -------------------------------------------------------------------
 
 // Health
 app.get('/health', (_req, res) => {
@@ -166,7 +166,7 @@ app.get('/', (_req, res) => {
     monroe: MONROE,
     convenience_fee_bps: CONVENIENCE_FEE_BPS,
     docs: 'https://github.com/srotzin/hive-checkout',
-    phase: 'Phase 1 — checkout-and-fanout'
+    phase: 'Phase 1  -  checkout-and-fanout'
   });
 });
 
@@ -188,7 +188,7 @@ app.get('/.well-known/agent.json', (_req, res) => {
     },
     mcp_endpoint: '/mcp',
     tools: ['build_checkout', 'execute_checkout', 'get_checkout_status'],
-    phase: 'Phase 1 — checkout-and-fanout',
+    phase: 'Phase 1  -  checkout-and-fanout',
     phase2_note: 'Phase 2 will implement true atomic batch x402 with merchant-side aggregator.',
     bogo_disclosure: {
       description: 'POST /v1/checkout/execute triggers a three-fee BOGO chain on payment: (1) 5% convenience fee payTo Monroe, (2) $0.10 audit receipt via hive-receipt (Spectral-signed), (3) $0.0005 gamification event via hive-gamification (first-call-free BOGO applies).',
@@ -309,7 +309,7 @@ app.post('/mcp', async (req, res) => {
   return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
 });
 
-// ── REST endpoints ────────────────────────────────────────────────────────────
+// -- REST endpoints ------------------------------------------------------------
 
 
 // POST /v1/checkout/quote
@@ -391,7 +391,7 @@ app.post('/v1/checkout/build', (req, res) => {
   res.json({ checkout_id, items_count: items.length, subtotal_atomic: subtotal, convenience_fee_atomic: fee, total_atomic: total, x402_challenge: record.x402_challenge, expires_at });
 });
 
-// POST /v1/checkout/execute — gated by x402
+// POST /v1/checkout/execute  -  gated by x402
 app.post('/v1/checkout/execute', async (req, res) => {
   const xPayment = req.headers['x-payment'];
   const { checkout_id } = req.body || {};
@@ -417,7 +417,7 @@ app.post('/v1/checkout/execute', async (req, res) => {
     });
   }
 
-  // Payment received — log and fan out
+  // Payment received  -  log and fan out
   const settlementRecord = {
     checkout_id,
     x_payment: xPayment,
@@ -462,7 +462,7 @@ app.post('/v1/checkout/execute', async (req, res) => {
   cart.status = status;
   cart.results = results;
 
-  // ── BOGO chain #3b: receipt + gamification on checkout execute ──────────────────
+  // -- BOGO chain #3b: receipt + gamification on checkout execute ------------------
   const buyer_did = req.headers['x-did'] || req.body?.buyer_did || null;
   const [auditReceipt, gamification] = await Promise.all([
     emitCheckoutReceipt({
@@ -516,7 +516,7 @@ app.get('/v1/checkout/:checkout_id/status', (req, res) => {
   });
 });
 
-// ── well-known / x402 ─────────────────────────────────────────────────────────
+// -- well-known / x402 ---------------------------------------------------------
 
 app.get('/.well-known/x402', (_req, res) => {
   res.json({
@@ -626,7 +626,7 @@ app.get('/.well-known/x402', (_req, res) => {
   });
 });
 
-// ── well-known / agent-card.json (A2A 0.1) ────────────────────────────────────
+// -- well-known / agent-card.json (A2A 0.1) ------------------------------------
 
 app.get('/.well-known/agent-card.json', (req, res) => {
   const pubkey = SPECTRAL_PUBKEY_B64;
@@ -667,7 +667,7 @@ app.get('/.well-known/agent-card.json', (req, res) => {
   });
 });
 
-// ── well-known / ap2.json (AP2 0.1) ───────────────────────────────────────────
+// -- well-known / ap2.json (AP2 0.1) -------------------------------------------
 
 app.get('/.well-known/ap2.json', (_req, res) => {
   res.json({
@@ -708,7 +708,7 @@ app.get('/.well-known/ap2.json', (_req, res) => {
   });
 });
 
-// ── well-known / openapi.json (OpenAPI 3.0.3 + x-pricing + x-payment-info) ────
+// -- well-known / openapi.json (OpenAPI 3.0.3 + x-pricing + x-payment-info) ----
 
 app.get('/.well-known/openapi.json', (_req, res) => {
   res.json({
@@ -741,7 +741,7 @@ app.get('/.well-known/openapi.json', (_req, res) => {
           },
           responses: {
             '200': { description: 'Success.' },
-            '402': { description: 'Payment Required — x402 challenge.' },
+            '402': { description: 'Payment Required  -  x402 challenge.' },
             '400': { description: 'Validation error.' }
           }
         }
@@ -761,7 +761,7 @@ app.get('/.well-known/openapi.json', (_req, res) => {
 });
 
 
-// ─── JWKS ─────────────────────────────────────────────────────────────────────
+// --- JWKS ---------------------------------------------------------------------
 app.get('/.well-known/jwks.json', (_req, res) => {
   const der = Buffer.from(SPECTRAL_PUBKEY_B64, 'base64');
   const x   = der.slice(-32).toString('base64url');
@@ -777,7 +777,7 @@ app.get('/.well-known/jwks.json', (_req, res) => {
   });
 });
 
-// ─── DID document ─────────────────────────────────────────────────────────────
+// --- DID document -------------------------------------------------------------
 app.get('/.well-known/did.json', (_req, res) => {
   const did = 'did:web:hive-checkout.onrender.com';
   const der = Buffer.from(SPECTRAL_PUBKEY_B64, 'base64');
