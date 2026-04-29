@@ -329,6 +329,205 @@ app.get('/v1/checkout/:checkout_id/status', (req, res) => {
   });
 });
 
+// ── well-known / x402 ─────────────────────────────────────────────────────────
+
+app.get('/.well-known/x402', (_req, res) => {
+  res.json({
+    x402Version:  2,
+    cold_safe:    true,
+    service:      'hive-checkout',
+    version:      '1.0.0',
+    brand_color:  '#C08D23',
+    payTo:        '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+    network:      'base',
+    chain_id:     8453,
+    asset:        'USDC',
+    contract:     '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    facilitator: {
+      url:                    'https://hivemorph.onrender.com/v1/x402',
+      supported_schemes:      ['exact'],
+      supported_networks:     ['eip155:8453'],
+      syncFacilitatorOnStart: false,
+      cold_safe:              true
+    },
+    resources: [
+      {
+        path:        '/v1/checkout/execute',
+        method:      'POST',
+        description: 'Execute a multi-tool cart. 5% convenience fee on subtotal.',
+        'x-pricing': {
+          scheme: 'exact',
+          asset: 'USDC',
+          fee_bps: 500,
+          payTo: '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+          description: '5% of cart subtotal_atomic. payTo Monroe.',
+        },
+        'x-payment-info': {
+          scheme: 'exact',
+          asset: 'USDC',
+          fee_bps: 500,
+          payTo: '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+          description: '5% of cart subtotal_atomic. payTo Monroe.',
+        }
+      },
+      {
+        path:        '/v1/checkout/build',
+        method:      'POST',
+        description: 'Build a cart and receive x402 challenge. No fee.',
+        'x-pricing':      { scheme: 'free', note: 'Cart build is free. Payment required on execute.' },
+        'x-payment-info': { scheme: 'free', note: 'Cart build is free. Payment required on execute.' }
+      }
+    ],
+    discovery_companions: {
+      agent_card: '/.well-known/agent-card.json',
+      ap2:        '/.well-known/ap2.json',
+      openapi:    '/.well-known/openapi.json'
+    },
+    disclaimers: {
+      not_a_security: true,
+      not_custody:    true,
+      not_insurance:  true,
+      signal_only:    true
+    }
+  });
+});
+
+// ── well-known / agent-card.json (A2A 0.1) ────────────────────────────────────
+
+app.get('/.well-known/agent-card.json', (req, res) => {
+  const pubkey = (typeof getPublicKeyB64 === 'function')
+    ? getPublicKeyB64()
+    : (typeof spectral !== 'undefined' ? (spectral.publicKeyB64 || null) : null);
+  res.json({
+    name:        'hive-checkout',
+    version:     '1.0.0',
+    description: 'Multi-tool cart with 5% convenience fee. x402 Base USDC settlement to Monroe.',
+    brand_color: '#C08D23',
+    did:         `did:web:${req.hostname}`,
+    protocol:    'A2A/0.1',
+    capabilities: [
+      'checkout.build',
+      'checkout.execute',
+      'checkout.status'
+    ],
+    spectral: {
+      public_key:    pubkey,
+      signature_algo: 'ed25519',
+      jwks_endpoint: '/.well-known/jwks.json'
+    },
+    treasury: {
+      address:  '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+      network:  'base',
+      chain_id: 8453,
+      asset:    'USDC'
+    },
+    payment: {
+      protocol: 'x402',
+      version:  '2',
+      network:  'base',
+      chain_id: 8453,
+      asset:    'USDC',
+      contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      payTo:    '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e'
+    },
+    mcp_endpoint: '/mcp',
+    tools: ['build_checkout', 'execute_checkout', 'get_checkout_status']
+  });
+});
+
+// ── well-known / ap2.json (AP2 0.1) ───────────────────────────────────────────
+
+app.get('/.well-known/ap2.json', (_req, res) => {
+  res.json({
+    ap2_version:   '0.1',
+    service:       'hive-checkout',
+    accepted_tokens: [
+      {
+        symbol:   'USDC',
+        contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        network:  'base',
+        chain_id: 8453,
+        decimals: 6
+      },
+      {
+        symbol:   'USDT',
+        contract: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
+        network:  'base',
+        chain_id: 8453,
+        decimals: 6,
+        role:     'alternate'
+      }
+    ],
+    networks:           [{ name: 'base', chain_id: 8453, role: 'primary' }],
+    payment_protocols:  ['x402/v2'],
+    settlement: {
+      finality:  'on-chain',
+      network:   'base',
+      chain_id:  8453,
+      payTo:     '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e'
+    },
+    paid_endpoints: [
+      { path: '/v1/checkout/execute', method: 'POST', description: 'Execute a multi-tool cart. 5% convenience fee on subtotal.' }
+    ],
+    free_endpoints: [
+      { path: '/v1/checkout/build', method: 'POST', description: 'Build a cart and receive x402 challenge. No fee.' }
+    ],
+    brand_color: '#C08D23'
+  });
+});
+
+// ── well-known / openapi.json (OpenAPI 3.0.3 + x-pricing + x-payment-info) ────
+
+app.get('/.well-known/openapi.json', (_req, res) => {
+  res.json({
+    openapi: '3.0.3',
+    info: {
+      title:       'hive-checkout API',
+      version:     '1.0.0',
+      description: 'Multi-tool cart with 5% convenience fee. x402 Base USDC settlement to Monroe.',
+      contact:     { name: 'The Hivery', url: 'https://thehiveryiq.com' }
+    },
+    servers: [{ url: 'https://hive-checkout.onrender.com', description: 'Production (Render)' }],
+    paths: {
+      '/v1/checkout/execute': {
+        post: {
+          operationId: 'v1_checkout_execute',
+          summary: 'Execute a multi-tool cart. 5% convenience fee on subtotal.',
+          'x-pricing': {
+          scheme: 'exact',
+          asset: 'USDC',
+          fee_bps: 500,
+          payTo: '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+          description: '5% of cart subtotal_atomic. payTo Monroe.'
+          },
+          'x-payment-info': {
+          scheme: 'exact',
+          asset: 'USDC',
+          fee_bps: 500,
+          payTo: '0x15184bf50b3d3f52b60434f8942b7d52f2eb436e',
+          description: '5% of cart subtotal_atomic. payTo Monroe.'
+          },
+          responses: {
+            '200': { description: 'Success.' },
+            '402': { description: 'Payment Required — x402 challenge.' },
+            '400': { description: 'Validation error.' }
+          }
+        }
+      },
+      '/v1/checkout/build': {
+        post: {
+          operationId: 'v1_checkout_build',
+          summary: 'Build a cart and receive x402 challenge. No fee.',
+          responses: {
+            '200': { description: 'Success.' },
+            '400': { description: 'Validation error.' }
+          }
+        }
+      }
+    }
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`hive-checkout listening on :${PORT}`);
 });
