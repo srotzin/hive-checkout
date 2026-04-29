@@ -238,7 +238,7 @@ app.post('/v1/checkout/quote', async (req, res) => {
       amount: String(amount),
       merchant: merchant || null,
       facilitator: 'https://hive-aleo-arc.onrender.com/v1/facilitator',
-      treasury: 'aleo1cyk7r2jmd7lfcftzyy85z4j5x6rlern598qecx8v2ms738xcuvgyq72q6tk',
+      treasury: 'aleo1cyk7r2jmd7lfcftzyy85z4j5x6rlern598qecx8v2ms738xcvgyq72q6tk',
       network: 'aleo-mainnet',
       hive_fee_bps: quote.hive_fee_bps,
       hive_fee: quote.hive_fee,
