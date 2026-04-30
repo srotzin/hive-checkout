@@ -129,3 +129,16 @@ Settlements are appended to `/tmp/checkout_settlements.jsonl` on the server. Eac
 ---
 
 *Built on Base mainnet. Real rails only. Brand gold `#C08D23`. Hivemorph stays private.*
+
+
+---
+
+## Hive Civilization
+
+Hive Civilization is the cryptographic backbone of autonomous agent commerce — the layer that makes every agent transaction provable, every payment settable, and every decision defensible.
+
+This repository is part of the **PROVABLE · SETTABLE · DEFENSIBLE** pillar.
+
+- thehiveryiq.com
+- hiveagentiq.com
+- agent-card: https://hivetrust.onrender.com/.well-known/agent-card.json
